@@ -2,55 +2,69 @@ use std::convert::TryFrom;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SECONDS_IN_DAY: u64 = 86400;
-const K_EVENT_NAME: &str = "name";
-const K_EVENT_TIME: &str = "time";
-const K_CONFIG_CURRENT_EVENT: &str = "current-event";
+const CONFIG_FILENAME: &str = ".countdown.yml";
 
-// TODO: enums
-const E_CONFIG_NOT_FOUND: &str = "Couldn't load config.";
-const E_EVENT_NAME_NOT_FOUND: &str = "Could not load event name.";
-const E_EVENT_TIME_NOT_FOUND: &str = "Could not load event time.";
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct CountdownConfig {
+  events: Vec<Event>,
+}
 
-fn main() {
-  match get_config(config::Config::default()).and_then(|conf| run(&conf)) {
-    Ok(res) => print!("{}", res.to_string()),
-    Err(e) => {
-      eprintln!("countdown: {}", e)
+impl Default for CountdownConfig {
+  fn default() -> Self {
+    Self { events: Vec::new() }
+  }
+}
+
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct Event {
+  name: String,
+  // Unix timestamp (seconds)
+  time: u32,
+}
+
+impl Event {
+  fn days_left(&self, current_time: SystemTime) -> Result<u16, String> {
+    let future_time = UNIX_EPOCH + Duration::from_secs(self.time.into());
+
+    match future_time.duration_since(current_time) {
+      Ok(dur) => u16::try_from(dur.as_secs() / SECONDS_IN_DAY)
+        .map_err(|e| format!("Error calculating days between: {:?}", e)),
+      Err(e) => Err(format!("{:?}", e)),
     }
   }
 }
 
-fn get_config(conf: config::Config) -> Result<config::Config, String> {
-  conf
-    .with_merged(config::File::with_name("/Users/lee.thomas/.countdown"))
-    .map_err(|_| "Error parsing config.".to_string())
-}
+fn main() {
+  let now = SystemTime::now();
+  let result: Result<Vec<(i32, String)>, String> =
+    dirs::home_dir()
+      .ok_or_else(|| "Failed to find home directory.".to_string())
+      .map(|home| format!("{:?}/{:?}", home.to_str(), CONFIG_FILENAME))
+      .and_then(|config_file: String| {
+        println!("config file: {:?}", config_file);
+        confy::load_path(config_file.as_str())
+          .map_err(|_| "Couldn't load config.".to_string())})
+      .map(|config: CountdownConfig| {
+        println!("config: {:?}", config);
+        config.events
+        .iter()
+        .map(|ev| match ev.days_left(now) {
+          Ok(days) => (i32::from(days), format!("{:?} days until {:?}", days, ev.name)),
+          Err(e) => (-1, (format!("countdown: {:?}", e))),
+        }).collect()});
 
-fn run(conf: &config::Config) -> Result<String, String> {
-  let parsed_config = conf
-    .get_table(K_CONFIG_CURRENT_EVENT)
-    .map_err(|_| E_CONFIG_NOT_FOUND)?;
-  let event_name = parsed_config
-    .get(K_EVENT_NAME)
-    .ok_or_else(|| E_EVENT_NAME_NOT_FOUND)
-    // TODO: Need enum for this, this is not the right error.
-    .and_then(|v| v.clone().into_str().map_err(|_| E_EVENT_NAME_NOT_FOUND))?;
-  let event_time = parsed_config
-    .get(K_EVENT_TIME)
-    .ok_or_else(|| E_EVENT_TIME_NOT_FOUND)
-    // TODO: Need enum for this, this is not the right error.
-    .and_then(|v| v.clone().into_int().map_err(|_| E_EVENT_TIME_NOT_FOUND))
-    .and_then(|num| u64::try_from(num).map_err(|_| "boom"))?;
-  let days_left = days_between(SystemTime::now(), Duration::from_secs(event_time))?;
+  println!("result: {:?}", result);
+  match result  {
+      Ok(all_events) => {
+        let (mut valid, invalid): (Vec<(i32, String)>, Vec<(i32, String)>) =
+          all_events.into_iter().partition(|(days, _)| days > &-1);
 
-  Ok(format!("| {} days until {}!", days_left, event_name))
-}
-
-fn days_between(now: SystemTime, future_offset_from_unix_time: Duration) -> Result<u64, String> {
-  let future_time = UNIX_EPOCH + future_offset_from_unix_time;
-
-  match future_time.duration_since(now) {
-    Ok(dur) => Ok(dur.as_secs() / SECONDS_IN_DAY),
-    Err(e) => Err(format!("{:?}", e)),
-  }
+        invalid.iter().for_each(|(_, msg)| eprintln!("{:?}", msg));
+        valid
+          .sort_by(|(a_days, _), (b_days, _)| a_days.cmp(b_days));
+        valid.iter().for_each(|(_, msg)| println!("{:?}", msg))
+      },
+      Err(e) => eprintln!("{:?}", e),
+    }
 }
