@@ -1,0 +1,18 @@
+name: countdown
+version: "0.1"
+author: Lee T. <leet944@gmail.com>
+about: Countdown to events you're looking forward to
+args:
+  - order:
+      short: o
+      long: order
+      takes_value: true
+      multiple: false
+      possible_values: [shuffle, time-asc, time-desc]
+      help: Specify the ordering of the events returned
+  - n:
+      short: n
+      long: n
+      takes_value: true
+      multiple: false
+      help: Max number of events to display.
