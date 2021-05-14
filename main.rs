@@ -46,9 +46,9 @@ fn main() {
         .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
       .map(|config: CountdownConfig| config.events
         .iter()
-        .map(|ev| match ev.days_left(now) {
-          Ok(days) => (i32::from(days), format!("{} days until {}", days, ev.name)),
-          Err(e) => (-1, (format!("countdown: {:?}", e))),
+        .filter_map(|ev| match ev.days_left(now) {
+          Ok(days) => Some((i32::from(days), format!("{} days until {}", days, ev.name))),
+          Err(_) => None,
         }).collect());
 
   match result  {
