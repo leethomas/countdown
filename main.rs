@@ -2,9 +2,8 @@ extern crate clap;
 extern crate rand;
 
 use std::convert::TryFrom;
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 
@@ -71,9 +70,28 @@ struct FutureEvent {
   days_left: u16,
 }
 
-struct Args<'a> {
-  order: Option<&'a str>,
-  n: Option<u64>,
+enum SortOrder {
+  Shuffle,
+  TimeAsc,
+  TimeDesc,
+}
+
+impl std::str::FromStr for SortOrder {
+  type Err = String;
+
+  fn from_str(s: &str) -> Result<Self, String> {
+    match s {
+      ARG_ORDER_SHUFFLE => Ok(Self::Shuffle),
+      ARG_ORDER_TIME_ASC => Ok(Self::TimeAsc),
+      ARG_ORDER_TIME_DESC => Ok(Self::TimeDesc),
+      _ => Err(format!("Invalid value for 'order': {}", s)),
+    }
+  }
+}
+
+struct CountdownArgs {
+  order: Option<SortOrder>,
+  n: Option<usize>,
 }
 
 fn main() {
@@ -86,13 +104,13 @@ fn main() {
     .and_then(|config_file| confy::load_path(config_file)
       .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
     .and_then(|config: CountdownConfig|
-      applicable_events(now, config.events, &cli_matches)
-        .map(|valid_events| valid_events
+      collect_args(&cli_matches).map(|args|
+        applicable_events(now, config.events, &args)
           .iter()
           .map(|ev|
             format!("{} days until {}", ev.days_left, ev.name)
           ).collect()
-        )
+      )
     );
 
   match result  {
@@ -101,6 +119,26 @@ fn main() {
       },
       Err(e) => eprintln!("{:?}", e),
     }
+}
+
+fn collect_args(clap_args: &clap::ArgMatches)
+  -> Result<CountdownArgs, String> {
+    // Largely uneeded because of Clap's validation, but
+    // it's nice to have.
+  let order = match clap_args.value_of(ARG_ORDER) {
+    Some(o) => o.parse::<SortOrder>().map(Some),
+    None => Ok(None),
+  }?;
+
+  let n = match clap_args.value_of(ARG_LIST_N) {
+    Some(limit) => limit
+      .parse::<usize>()
+      .map(Some)
+      .map_err(|e| format!("Error parsing 'n': {:?}", e)),
+    None => Ok(None),
+  }?;
+
+  Ok(CountdownArgs { order, n })
 }
 
 fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<Event> {
@@ -127,59 +165,51 @@ fn events_sorted_by_time(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
   cloned_events
 }
 
-fn sort_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Result<Vec<Event>, String> {
-  match cli_args.value_of(ARG_ORDER) {
-    Some(order) => {
-      if order == ARG_ORDER_SHUFFLE {
+fn sort_events(events: &Vec<Event>, args: &CountdownArgs) -> Vec<Event> {
+  match &args.order {
+    Some(order) => match order {
+      SortOrder::Shuffle => {
         let mut cloned = events.clone();
         cloned.shuffle(&mut thread_rng());
-        Ok(cloned)
-      } else if order == ARG_ORDER_TIME_DESC {
-        Ok(events_sorted_by_time(events, false))
-      } else if order == ARG_ORDER_TIME_ASC {
-        Ok(events_sorted_by_time(events, true))
-      } else {
-        // Clap is nice and protects from this ever happening, but being
-        // defensive in case it's ever replaced with something else that doesn't
-        // guard against invalid arguments.
-        Err(format!("Unsupported order argument: {}", order))
-      }
+
+        cloned
+      },
+      SortOrder::TimeAsc => {
+        events_sorted_by_time(events, true)
+      },
+      SortOrder::TimeDesc => {
+        events_sorted_by_time(events, false)
+      },
     },
-    None => Ok(events_sorted_by_time(events, true)),
+    None => events_sorted_by_time(events, true)
   }
 }
 
-fn limit_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Vec<Event> {
-  let cloned_events = events.clone().into_iter();
-
-  match cli_args.value_of(ARG_LIST_N)
-    .and_then(|n| n.parse::<usize>().ok()) {
-      Some(limit) => cloned_events
-        .take(limit)
-        .collect(),
-      None => cloned_events.collect(),
-    }
+fn limit_events(events: Vec<Event>, args: &CountdownArgs) -> Vec<Event> {
+  match args.n {
+    Some(limit) => events.into_iter().take(limit).collect(),
+    None => events,
+  }
 }
 
 fn applicable_events(
   now: SystemTime,
   events: Vec<Event>,
-  cli_args: &clap::ArgMatches,
-) -> Result<Vec<FutureEvent>, String> {
+  args: &CountdownArgs,
+) -> Vec<FutureEvent> {
   let current = filter_expired_events(now, &events);
-  let sorted = sort_events(&current, cli_args)?;
-  let limited = limit_events(&sorted, cli_args);
+  let sorted = sort_events(&current, &args);
+  let limited = limit_events(sorted, args);
 
-  Ok(limited
+  limited
     .into_iter()
     .filter_map(|ev| ev.as_future_event(now))
-    .collect())
+    .collect()
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::collections::HashMap;
 
   // Event
   #[test]
