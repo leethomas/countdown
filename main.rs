@@ -43,14 +43,6 @@ impl Event {
       })
   }
 
-  // duration_since will return Ok() if the event time is in the future
-  fn has_passed(&self, current_time: SystemTime) -> bool {
-    self.system_time()
-      .duration_since(current_time)
-      .ok()
-      .is_none()
-  }
-
   fn as_future_event(&self, current_time: SystemTime) -> Option<FutureEvent> {
     self.days_left(current_time).map(|days| FutureEvent {
       name: self.name.clone(),
@@ -64,6 +56,7 @@ impl Event {
 }
 
 // Validated event that has definitley not occurred yet.
+#[derive(Debug, Clone, PartialEq)]
 struct FutureEvent {
   name: String,
   days_left: u16,
@@ -140,31 +133,27 @@ fn collect_args(clap_args: &clap::ArgMatches)
   Ok(CountdownArgs { order, n })
 }
 
-fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<Event> {
+fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<FutureEvent> {
   events
     .clone()
     .into_iter()
-    .filter_map(|ev| if ev.has_passed(now) {
-        None
-     } else {
-       Some(ev)
-     })
+    .filter_map(|ev| ev.as_future_event(now))
     .collect()
 }
 
-fn events_sorted_by_time(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
+fn events_sorted_by_time(events: &Vec<FutureEvent>, is_asc: bool) -> Vec<FutureEvent> {
   let mut cloned_events = events.clone();
   cloned_events
     .sort_by(|a, b| if is_asc {
-      a.time.cmp(&b.time)
+      a.days_left.cmp(&b.days_left)
     } else {
-      b.time.cmp(&a.time)
+      b.days_left.cmp(&a.days_left)
     });
 
   cloned_events
 }
 
-fn sort_events(events: &Vec<Event>, order: &Option<SortOrder>) -> Vec<Event> {
+fn sort_events(events: &Vec<FutureEvent>, order: &Option<SortOrder>) -> Vec<FutureEvent> {
   match order {
     Some(o) => match o {
       SortOrder::Shuffle => {
@@ -184,7 +173,7 @@ fn sort_events(events: &Vec<Event>, order: &Option<SortOrder>) -> Vec<Event> {
   }
 }
 
-fn limit_events(events: Vec<Event>, limit: Option<usize>) -> Vec<Event> {
+fn limit_events(events: Vec<FutureEvent>, limit: Option<usize>) -> Vec<FutureEvent> {
   match limit {
     Some(n) => events.into_iter().take(n).collect(),
     None => events,
@@ -198,12 +187,8 @@ fn applicable_events(
 ) -> Vec<FutureEvent> {
   let current = filter_expired_events(now, &events);
   let sorted = sort_events(&current, &args.order);
-  let limited = limit_events(sorted, args.n);
-
-  limited
-    .into_iter()
-    .filter_map(|ev| ev.as_future_event(now))
-    .collect()
+  
+  limit_events(sorted, args.n)
 }
 
 #[cfg(test)]
@@ -212,12 +197,43 @@ mod tests {
 
   // Event
   #[test]
-  fn event_has_passed_is_true_when_event_expires() {
-    let event = Event { name: "expired".to_string(), time: 10 };
-    assert!(event.has_passed(UNIX_EPOCH + Duration::from_secs(11)));
+  fn event_days_left_calculates_remaining_days_correctly() {
+    let event = Event { name: "test".to_string(), time: 172800 };
+    let result = event.days_left(UNIX_EPOCH);
+
+    assert_eq!(result, Some(2));
   }
 
-  // other functions
+  #[test]
+  fn event_days_left_returns_none_if_eexpired() {
+    let event = Event { name: "test".to_string(), time: 5000 };
+    let result = event.days_left(UNIX_EPOCH + Duration::from_secs(10000));
+
+    assert_eq!(result, None);
+  }
+
+  #[test]
+  fn event_as_future_event_returns_future_event_if_not_expired() {
+    let event = Event { name: "test".to_string(), time: 172800 };
+    let result = event.as_future_event(UNIX_EPOCH);
+
+    assert_eq!(result, Some(FutureEvent {
+      name: "test".to_string(),
+      days_left: 2,
+    }));
+  }
+
+  #[test]
+  fn event_as_future_event_returns_none_if_expired() {
+    let event = Event { name: "test".to_string(), time: 172800 };
+    let result = event.as_future_event(
+      UNIX_EPOCH + Duration::from_secs(172801)
+    );
+
+    assert_eq!(result, None);
+  }
+
+
   #[test]
   fn filter_expired_events_removes_expired_events() {
     let events = vec![
@@ -232,25 +248,25 @@ mod tests {
 
     assert_eq!(
       result,
-      vec![Event { name: "not expired 1".to_string(), time: 1020 }],
+      vec![FutureEvent { name: "not expired 1".to_string(), days_left: 0 }],
     );
   }
 
   #[test]
-  fn events_sorted_by_time_sorts_in_asc_order() {
+  fn sort_events_sorts_in_asc_order() {
     let events = vec![
-      Event { name: "test 1".to_string(), time: 900 },
-      Event { name: "test 2".to_string(), time: 1020 },
-      Event { name: "test 3".to_string(), time: 543 },
+      FutureEvent { name: "test 1".to_string(), days_left: 900 },
+      FutureEvent { name: "test 2".to_string(), days_left: 1020 },
+      FutureEvent { name: "test 3".to_string(), days_left: 543 },
     ];
     let result = sort_events(&events, &Some(SortOrder::TimeAsc));
     
     assert_eq!(
       result,
       vec![
-        Event { name: "test 3".to_string(), time: 543 },
-        Event { name: "test 1".to_string(), time: 900 },
-        Event { name: "test 2".to_string(), time: 1020 },
+        FutureEvent { name: "test 3".to_string(), days_left: 543 },
+        FutureEvent { name: "test 1".to_string(), days_left: 900 },
+        FutureEvent { name: "test 2".to_string(), days_left: 1020 },
       ],
     );
   }
@@ -258,18 +274,18 @@ mod tests {
   #[test]
   fn sort_events_sorts_in_desc_order() {
     let events = vec![
-      Event { name: "test 1".to_string(), time: 900 },
-      Event { name: "test 2".to_string(), time: 1020 },
-      Event { name: "test 3".to_string(), time: 543 },
+      FutureEvent { name: "test 1".to_string(), days_left: 900 },
+      FutureEvent { name: "test 2".to_string(), days_left: 1020 },
+      FutureEvent { name: "test 3".to_string(), days_left: 543 },
     ];
     let result = sort_events(&events, &Some(SortOrder::TimeDesc));
     
     assert_eq!(
       result,
       vec![
-        Event { name: "test 2".to_string(), time: 1020 },
-        Event { name: "test 1".to_string(), time: 900 },
-        Event { name: "test 3".to_string(), time: 543 },
+        FutureEvent { name: "test 2".to_string(), days_left: 1020 },
+        FutureEvent { name: "test 1".to_string(), days_left: 900 },
+        FutureEvent { name: "test 3".to_string(), days_left: 543 },
       ],
     );
   }
