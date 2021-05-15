@@ -51,7 +51,6 @@ impl Event {
       .is_none()
   }
 
-  // TODO: make this a trait, impl From on FutureEvent?
   fn as_future_event(&self, current_time: SystemTime) -> Option<FutureEvent> {
     self.days_left(current_time).map(|days| FutureEvent {
       name: self.name.clone(),
@@ -165,9 +164,9 @@ fn events_sorted_by_time(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
   cloned_events
 }
 
-fn sort_events(events: &Vec<Event>, args: &CountdownArgs) -> Vec<Event> {
-  match &args.order {
-    Some(order) => match order {
+fn sort_events(events: &Vec<Event>, order: &Option<SortOrder>) -> Vec<Event> {
+  match order {
+    Some(o) => match o {
       SortOrder::Shuffle => {
         let mut cloned = events.clone();
         cloned.shuffle(&mut thread_rng());
@@ -185,9 +184,9 @@ fn sort_events(events: &Vec<Event>, args: &CountdownArgs) -> Vec<Event> {
   }
 }
 
-fn limit_events(events: Vec<Event>, args: &CountdownArgs) -> Vec<Event> {
-  match args.n {
-    Some(limit) => events.into_iter().take(limit).collect(),
+fn limit_events(events: Vec<Event>, limit: Option<usize>) -> Vec<Event> {
+  match limit {
+    Some(n) => events.into_iter().take(n).collect(),
     None => events,
   }
 }
@@ -198,8 +197,8 @@ fn applicable_events(
   args: &CountdownArgs,
 ) -> Vec<FutureEvent> {
   let current = filter_expired_events(now, &events);
-  let sorted = sort_events(&current, &args);
-  let limited = limit_events(sorted, args);
+  let sorted = sort_events(&current, &args.order);
+  let limited = limit_events(sorted, args.n);
 
   limited
     .into_iter()
@@ -244,7 +243,7 @@ mod tests {
       Event { name: "test 2".to_string(), time: 1020 },
       Event { name: "test 3".to_string(), time: 543 },
     ];
-    let result = events_sorted_by_time(&events, true);
+    let result = sort_events(&events, &Some(SortOrder::TimeAsc));
     
     assert_eq!(
       result,
@@ -257,13 +256,13 @@ mod tests {
   }
 
   #[test]
-  fn events_sorted_by_time_sorts_in_desc_order() {
+  fn sort_events_sorts_in_desc_order() {
     let events = vec![
       Event { name: "test 1".to_string(), time: 900 },
       Event { name: "test 2".to_string(), time: 1020 },
       Event { name: "test 3".to_string(), time: 543 },
     ];
-    let result = events_sorted_by_time(&events, false);
+    let result = sort_events(&events, &Some(SortOrder::TimeDesc));
     
     assert_eq!(
       result,
