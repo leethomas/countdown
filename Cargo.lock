@@ -100,17 +100,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
-name = "countdown"
-version = "0.1.0"
-dependencies = [
- "clap",
- "confy",
- "dirs",
- "rand",
- "serde",
-]
-
-[[package]]
 name = "crossbeam-utils"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -167,6 +156,17 @@ name = "dtoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
+
+[[package]]
+name = "event-countdown"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "confy",
+ "dirs",
+ "rand",
+ "serde",
+]
 
 [[package]]
 name = "getrandom"
