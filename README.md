@@ -26,7 +26,7 @@ OPTIONS:
 ```
 
 ## Setup & Installation
-1. Install with `cargo install event-countdown`
+1. Install with `cargo install --git https://github.com/leethomas/countdown --branch main`
 
 2. Before running, create a `.countdown.yml` file in your home directory containing a list of events you'd like to track. Here's an example with dates far into the future (as of 2021 😄):
 
