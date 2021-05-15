@@ -26,7 +26,6 @@ impl Default for CountdownConfig {
   }
 }
 
-
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 struct Event {
   name: String,
@@ -35,12 +34,13 @@ struct Event {
 }
 
 impl Event {
-  fn days_left(&self, current_time: SystemTime) -> Result<u16, String> {
-    match self.system_time().duration_since(current_time) {
-      Ok(dur) => u16::try_from(dur.as_secs() / SECONDS_IN_DAY)
-        .map_err(|e| format!("Error calculating days between: {:?}", e)),
-      Err(e) => Err(format!("{:?}", e)),
-    }
+  fn days_left(&self, current_time: SystemTime) -> Option<u16> {
+    self.system_time()
+      .duration_since(current_time)
+      .ok()
+      .and_then(|dur| {
+        u16::try_from(dur.as_secs() / SECONDS_IN_DAY).ok()
+      })
   }
 
   // duration_since will return Ok() if the event time is in the future
@@ -53,7 +53,7 @@ impl Event {
 
   // TODO: make this a trait, impl From on FutureEvent?
   fn as_future_event(&self, current_time: SystemTime) -> Option<FutureEvent> {
-    self.days_left(current_time).ok().map(|days| FutureEvent {
+    self.days_left(current_time).map(|days| FutureEvent {
       name: self.name.clone(),
       days_left: days,
     })
