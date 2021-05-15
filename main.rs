@@ -2,6 +2,7 @@ extern crate clap;
 extern crate rand;
 
 use std::convert::TryFrom;
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::path::PathBuf;
 use rand::thread_rng;
@@ -27,17 +28,11 @@ impl Default for CountdownConfig {
 }
 
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 struct Event {
   name: String,
   // Unix timestamp (seconds)
   time: u32,
-}
-
-// Validated event that has definitley not occurred yet.
-struct FutureEvent {
-  name: String,
-  days_left: u16,
 }
 
 impl Event {
@@ -49,8 +44,7 @@ impl Event {
     }
   }
 
-  // duration_since will return an error if the duration is negative, indicating
-  // that the event has passed.
+  // duration_since will return Ok() if the event time is in the future
   fn has_passed(&self, current_time: SystemTime) -> bool {
     self.system_time()
       .duration_since(current_time)
@@ -69,6 +63,17 @@ impl Event {
   fn system_time(&self) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(self.time.into())
   }
+}
+
+// Validated event that has definitley not occurred yet.
+struct FutureEvent {
+  name: String,
+  days_left: u16,
+}
+
+struct Args<'a> {
+  order: Option<&'a str>,
+  n: Option<u64>,
 }
 
 fn main() {
@@ -110,7 +115,7 @@ fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<Event> {
     .collect()
 }
 
-fn events_sorted_by_date(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
+fn events_sorted_by_time(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
   let mut cloned_events = events.clone();
   cloned_events
     .sort_by(|a, b| if is_asc {
@@ -130,9 +135,9 @@ fn sort_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Result<Vec<E
         cloned.shuffle(&mut thread_rng());
         Ok(cloned)
       } else if order == ARG_ORDER_TIME_DESC {
-        Ok(events_sorted_by_date(events, false))
+        Ok(events_sorted_by_time(events, false))
       } else if order == ARG_ORDER_TIME_ASC {
-        Ok(events_sorted_by_date(events, true))
+        Ok(events_sorted_by_time(events, true))
       } else {
         // Clap is nice and protects from this ever happening, but being
         // defensive in case it's ever replaced with something else that doesn't
@@ -140,7 +145,7 @@ fn sort_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Result<Vec<E
         Err(format!("Unsupported order argument: {}", order))
       }
     },
-    None => Ok(events_sorted_by_date(events, true)),
+    None => Ok(events_sorted_by_time(events, true)),
   }
 }
 
@@ -169,4 +174,74 @@ fn applicable_events(
     .into_iter()
     .filter_map(|ev| ev.as_future_event(now))
     .collect())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::collections::HashMap;
+
+  // Event
+  #[test]
+  fn event_has_passed_is_true_when_event_expires() {
+    let event = Event { name: "expired".to_string(), time: 10 };
+    assert!(event.has_passed(UNIX_EPOCH + Duration::from_secs(11)));
+  }
+
+  // other functions
+  #[test]
+  fn filter_expired_events_removes_expired_events() {
+    let events = vec![
+      Event { name: "expired 1".to_string(), time: 900 },
+      Event { name: "not expired 1".to_string(), time: 1020 },
+      Event { name: "expired 3".to_string(), time: 543 },
+    ];
+    let result = filter_expired_events(
+      UNIX_EPOCH + Duration::from_secs(1000),
+      &events,
+    );
+
+    assert_eq!(
+      result,
+      vec![Event { name: "not expired 1".to_string(), time: 1020 }],
+    );
+  }
+
+  #[test]
+  fn events_sorted_by_time_sorts_in_asc_order() {
+    let events = vec![
+      Event { name: "test 1".to_string(), time: 900 },
+      Event { name: "test 2".to_string(), time: 1020 },
+      Event { name: "test 3".to_string(), time: 543 },
+    ];
+    let result = events_sorted_by_time(&events, true);
+    
+    assert_eq!(
+      result,
+      vec![
+        Event { name: "test 3".to_string(), time: 543 },
+        Event { name: "test 1".to_string(), time: 900 },
+        Event { name: "test 2".to_string(), time: 1020 },
+      ],
+    );
+  }
+
+  #[test]
+  fn events_sorted_by_time_sorts_in_desc_order() {
+    let events = vec![
+      Event { name: "test 1".to_string(), time: 900 },
+      Event { name: "test 2".to_string(), time: 1020 },
+      Event { name: "test 3".to_string(), time: 543 },
+    ];
+    let result = events_sorted_by_time(&events, true);
+    
+    assert_eq!(
+      result,
+      vec![
+        Event { name: "test 2".to_string(), time: 1020 },
+        Event { name: "test 1".to_string(), time: 900 },
+        Event { name: "test 3".to_string(), time: 543 },
+      ],
+    );
+  }
 }
