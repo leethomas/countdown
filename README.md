@@ -25,8 +25,10 @@ OPTIONS:
     -o, --order <order>    Specify the ordering of the events returned [possible values: shuffle, time-asc, time-desc]
 ```
 
-## Setup
-Before running, create a `.countdown.yml` file in your home directory containing a list of events you'd like to track. Here's an example with dates far into the future (as of 2021 😄):
+## Setup & Installation
+1. Install with `cargo install event-countdown`
+
+2. Before running, create a `.countdown.yml` file in your home directory containing a list of events you'd like to track. Here's an example with dates far into the future (as of 2021 😄):
 
 ```yml
 events:
@@ -37,3 +39,5 @@ events:
   - name: memorial day weekend
     time: 1892170000
 ```
+
+3. Now run `countdown` in your shell and you're all set 🎉
