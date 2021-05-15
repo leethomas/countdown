@@ -263,7 +263,7 @@ mod tests {
       Event { name: "test 2".to_string(), time: 1020 },
       Event { name: "test 3".to_string(), time: 543 },
     ];
-    let result = events_sorted_by_time(&events, true);
+    let result = events_sorted_by_time(&events, false);
     
     assert_eq!(
       result,
