@@ -80,12 +80,14 @@ fn main() {
     .map(|home| [home, CONFIG_FILENAME.into()].iter().collect::<PathBuf>())
     .and_then(|config_file| confy::load_path(config_file)
       .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
-    .map(|config: CountdownConfig|
+    .and_then(|config: CountdownConfig|
       applicable_events(now, config.events, &cli_matches)
-        .iter()
-        .map(|ev|
-          format!("{} days until {}", ev.days_left, ev.name)
-        ).collect()
+        .map(|valid_events| valid_events
+          .iter()
+          .map(|ev|
+            format!("{} days until {}", ev.days_left, ev.name)
+          ).collect()
+        )
     );
 
   match result  {
@@ -120,23 +122,25 @@ fn events_sorted_by_date(events: &Vec<Event>, is_asc: bool) -> Vec<Event> {
   cloned_events
 }
 
-// TODO: Maybe this should return a Result in case of unsupported sort types.
-fn sort_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Vec<Event> {
-  match cli_args.value_of(ARG_ORDER).map(|order| {
-    if order == ARG_ORDER_SHUFFLE {
-      let mut cloned = events.clone();
-      cloned.shuffle(&mut thread_rng());
-      cloned
-    } else if order == ARG_ORDER_TIME_DESC {
-      events_sorted_by_date(events, false)
-    } else if order == ARG_ORDER_TIME_ASC {
-      events_sorted_by_date(events, true)
-    } else {
-      events_sorted_by_date(events, true)
-    }
-  }) {
-    Some(results) => results,
-    None => events_sorted_by_date(events, true),
+fn sort_events(events: &Vec<Event>, cli_args: &clap::ArgMatches) -> Result<Vec<Event>, String> {
+  match cli_args.value_of(ARG_ORDER) {
+    Some(order) => {
+      if order == ARG_ORDER_SHUFFLE {
+        let mut cloned = events.clone();
+        cloned.shuffle(&mut thread_rng());
+        Ok(cloned)
+      } else if order == ARG_ORDER_TIME_DESC {
+        Ok(events_sorted_by_date(events, false))
+      } else if order == ARG_ORDER_TIME_ASC {
+        Ok(events_sorted_by_date(events, true))
+      } else {
+        // Clap is nice and protects from this ever happening, but being
+        // defensive in case it's ever replaced with something else that doesn't
+        // guard against invalid arguments.
+        Err(format!("Unsupported order argument: {}", order))
+      }
+    },
+    None => Ok(events_sorted_by_date(events, true)),
   }
 }
 
@@ -156,13 +160,13 @@ fn applicable_events(
   now: SystemTime,
   events: Vec<Event>,
   cli_args: &clap::ArgMatches,
-) -> Vec<FutureEvent> {
+) -> Result<Vec<FutureEvent>, String> {
   let current = filter_expired_events(now, &events);
-  let sorted = sort_events(&current, cli_args);
+  let sorted = sort_events(&current, cli_args)?;
   let limited = limit_events(&sorted, cli_args);
 
-  limited
+  Ok(limited
     .into_iter()
     .filter_map(|ev| ev.as_future_event(now))
-    .collect()
+    .collect())
 }
