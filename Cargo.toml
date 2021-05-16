@@ -2,11 +2,15 @@
 name = "event-countdown"
 version = "1.0.3"
 authors = ["Lee Thomas <leet944@gmail.com>"]
+description = "Countdown to events you're looking forward to."
 edition = "2018"
 readme = "README.md"
 license-file = "LICENSE"
 keywords = ["cli", "utils", "utility", "count", "event"]
 categories = ["command-line-utilities"]
+homepage = "https://github.com/leethomas/countdown"
+documentation = "https://github.com/leethomas/countdown"
+repository = "https://github.com/leethomas/countdown"
 
 [dependencies]
 clap = { version = "2.33.3", features = ["yaml"] }
