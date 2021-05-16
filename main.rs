@@ -2,7 +2,7 @@ extern crate clap;
 extern crate rand;
 
 use std::convert::TryFrom;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
@@ -92,7 +92,7 @@ fn main() {
   let cli_matches = clap::App::from_yaml(cli_config).get_matches();
   let result: Result<Vec<String>, String> = dirs::home_dir()
     .ok_or_else(|| "Failed to find home directory.".to_string())
-    .map(|home| [home, CONFIG_FILENAME.into()].iter().collect::<PathBuf>())
+    .map(|home| home.join(Path::new(CONFIG_FILENAME)))
     .and_then(|config_file| confy::load_path(config_file)
       .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
     .and_then(|config: CountdownConfig|
