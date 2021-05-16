@@ -5,7 +5,7 @@ authors = ["Lee Thomas <leet944@gmail.com>"]
 edition = "2018"
 readme = "README.md"
 license-file = "LICENSE"
-keywords = ["cli", "utils", "utility", "utilities", "count", "event", "command line"]
+keywords = ["cli", "utils", "utility", "utilities", "count", "event"]
 categories = ["command-line-utilities"]
 
 [dependencies]
