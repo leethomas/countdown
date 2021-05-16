@@ -1,6 +1,6 @@
 [package]
 name = "event-countdown"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Lee Thomas <leet944@gmail.com>"]
 edition = "2018"
 readme = "README.md"
