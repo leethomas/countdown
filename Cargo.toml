@@ -1,6 +1,6 @@
 [package]
 name = "event-countdown"
-version = "1.0.3"
+version = "1.0.4"
 authors = ["Lee Thomas <leet944@gmail.com>"]
 description = "Countdown to events you're looking forward to."
 edition = "2018"
