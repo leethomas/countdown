@@ -26,22 +26,23 @@ OPTIONS:
 ```
 
 ## Setup & Installation
-1. Install with `cargo install --git https://github.com/leethomas/countdown --branch main`
+
+1. Install with `cargo install event-countdown`
 
 2. Before running, create a `.countdown.toml` file in your home directory containing a list of events you'd like to track. Here's an example with dates far into the future (as of 2021 😄):
 
-```toml
-[[events]]
-name = "summer break"
-time = 1892160000 # these are unix timestamps in seconds
+  ```toml
+  [[events]]
+  name = "summer break"
+  time = 1892160000 # these are unix timestamps in seconds
 
-[[events]]
-name = "wwdc"
-time = 1892250000
+  [[events]]
+  name = "wwdc"
+  time = 1892250000
 
-[[events]]
-name = "memorial day weekend"
-time = 1892170000
-```
+  [[events]]
+  name = "memorial day weekend"
+  time = 1892170000
+  ```
 
 3. Now run `countdown` in your shell and you're all set 🎉
