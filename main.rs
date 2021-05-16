@@ -55,7 +55,7 @@ impl Event {
   }
 }
 
-// Validated event that has definitley not occurred yet.
+// Validated event that has definitely not occurred yet.
 #[derive(Debug, Clone, PartialEq)]
 struct FutureEvent {
   name: String,
@@ -115,7 +115,7 @@ fn main() {
 
 fn collect_args(clap_args: &clap::ArgMatches)
   -> Result<CountdownArgs, String> {
-    // Largely uneeded because of Clap's validation, but
+    // Largely unneeded because of Clap's validation, but
     // it's nice to have.
   let order = match clap_args.value_of(ARG_ORDER) {
     Some(o) => o.parse::<SortOrder>().map(Some),
@@ -204,7 +204,7 @@ mod tests {
   }
 
   #[test]
-  fn event_days_left_returns_none_if_eexpired() {
+  fn event_days_left_returns_none_if_expired() {
     let event = Event { name: "test".to_string(), time: 5000 };
     let result = event.days_left(UNIX_EPOCH + Duration::from_secs(10000));
 
