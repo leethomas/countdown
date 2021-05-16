@@ -135,8 +135,7 @@ fn collect_args(clap_args: &clap::ArgMatches)
 
 fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<FutureEvent> {
   events
-    .clone()
-    .into_iter()
+    .iter()
     .filter_map(|ev| ev.as_future_event(now))
     .collect()
 }
