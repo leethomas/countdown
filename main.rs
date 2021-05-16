@@ -8,7 +8,7 @@ use rand::thread_rng;
 use rand::seq::SliceRandom;
 
 const SECONDS_IN_DAY: u64 = 86400;
-const CONFIG_FILENAME: &str = ".countdown.yml";
+const CONFIG_FILENAME: &str = ".countdown.toml";
 const ARG_LIST_N: &str = "n";
 const ARG_ORDER: &str = "order";
 const ARG_ORDER_SHUFFLE: &str = "shuffle";
