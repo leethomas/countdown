@@ -2,9 +2,9 @@
 
 ## Description
 
-Countdown is a command line program that lets you know how many days are
+Countdown is a command line program that tells you how many days are
 remaining until any number of events that you've configured. Use it in your
-shell's $PS2 to always have the soonest event displayed, or just use it on the
+shell's $PS1 to always have the soonest event displayed, or just use it on the
 fly whenever you need some encouragement for the week.
 
 ![demo](https://user-images.githubusercontent.com/5622404/118373813-932a0780-b56d-11eb-9388-d58adc65b8a6.gif)
