@@ -1,5 +1,5 @@
 name: countdown
-version: "0.1"
+version: "1.0.4"
 author: Lee T. <leet944@gmail.com>
 about: Countdown to events you're looking forward to
 args:
