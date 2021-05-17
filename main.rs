@@ -90,7 +90,7 @@ fn main() {
   let now = SystemTime::now();
   let cli_config = clap::load_yaml!("cli.yml");
   let cli_matches = clap::App::from_yaml(cli_config).get_matches();
-  let result: Result<Vec<String>, String> = dirs::home_dir()
+  let result: Result<Vec<FutureEvent>, String> = dirs::home_dir()
     .ok_or_else(|| "Failed to find home directory.".to_string())
     .map(|home| home.join(Path::new(CONFIG_FILENAME)))
     .and_then(|config_file| confy::load_path(config_file)
@@ -98,17 +98,15 @@ fn main() {
     .and_then(|config: CountdownConfig|
       collect_args(&cli_matches).map(|args|
         applicable_events(now, config.events, &args)
-          .iter()
-          .map(|ev|
-            format!("{} days until {}", ev.days_left, ev.name)
-          ).collect()
       )
     );
 
   match result  {
-      Ok(events) => {
-        events.iter().for_each(|msg| println!("{}", msg))
-      },
+      Ok(events) => events
+        .iter()
+        .for_each(|ev| {
+          println!("{} days until {}", ev.days_left, ev.name)
+        }),
       Err(e) => eprintln!("{:?}", e),
     }
 }
