@@ -8,12 +8,16 @@ use rand::thread_rng;
 use rand::seq::SliceRandom;
 
 const SECONDS_IN_DAY: u64 = 86400;
+const MAX_ADDITIONS: usize = 100;
 const CONFIG_FILENAME: &str = ".countdown.toml";
 const ARG_LIST_N: &str = "n";
 const ARG_ORDER: &str = "order";
 const ARG_ORDER_SHUFFLE: &str = "shuffle";
 const ARG_ORDER_TIME_DESC: &str = "time-desc";
 const ARG_ORDER_TIME_ASC: &str = "time-asc";
+const ARG_ADD_EVENT: &str = "add";
+
+const E_CANNOT_ADD_EXPIRED_EVENTS: &str = "Cannot add expired event {}.";
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct CountdownConfig {
@@ -82,36 +86,84 @@ impl std::str::FromStr for SortOrder {
 }
 
 struct CountdownArgs {
+  additions: Vec<FutureEvent>,
   order: Option<SortOrder>,
   n: Option<usize>,
+}
+
+enum Mode {
+  Add,
+  Display,
+}
+
+impl From<CountdownArgs> for Mode {
+  fn from(args: CountdownArgs) -> Self {
+    if args.additions.is_empty() {
+      Self::Display
+    } else {
+      Self::Add
+    }
+  }
+}
+
+enum ActionTaken {
+  // lol unlikely that someone will add this many events at once
+  EventsAdded(ProcessedAdditionsState),
+  EventsDisplayed,
+}
+
+enum ProcessedAdditionsState {
+  // Contains number of events successfully processed
+  Success(u8),
+  Error(String),
 }
 
 fn main() {
   let now = SystemTime::now();
   let cli_config = clap::load_yaml!("cli.yml");
   let cli_matches = clap::App::from_yaml(cli_config).get_matches();
-  let result: Result<Vec<FutureEvent>, String> = dirs::home_dir()
+  let result: Result<ActionTaken, String> = dirs::home_dir()
     .ok_or_else(|| "Failed to find home directory.".to_string())
     .map(|home| home.join(Path::new(CONFIG_FILENAME)))
     .and_then(|config_file| confy::load_path(config_file)
       .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
     .and_then(|config: CountdownConfig|
-      collect_args(&cli_matches).map(|args|
-        applicable_events(now, config.events, &args)
-      )
+      collect_args(&cli_matches, now).map(|args| {
+        match Mode::from(&args) {
+          Mode::Add => add_events(&args),
+          Mode::Display => display_events(now, &config.events, &args),
+        }
+      })
     );
 
-  match result  {
-      Ok(events) => events
-        .iter()
-        .for_each(|ev| {
-          println!("{} days until {}", ev.days_left, ev.name)
-        }),
-      Err(e) => eprintln!("{:?}", e),
-    }
+  match result {
+    Ok(action_taken) => match action_taken {
+      ActionTaken::EventsDisplayed => (),
+      ActionTaken::EventsAdded(n) => println!("Added {:?} events!", n),
+    },
+    Err(e) => eprintln!("{:?}", e),
+  }
 }
 
-fn collect_args(clap_args: &clap::ArgMatches)
+fn display_events(
+  now: SystemTime,
+  events: &Vec<Event>,
+  args: &CountdownArgs,
+) -> Result<ActionTaken, String> {
+  applicable_events(now, events, args)
+    .iter()
+    .for_each(|ev| {
+      println!("{} days until {}", ev.days_left, ev.name)
+    });
+
+  Ok(ActionTaken::EventsDisplayed)
+}
+
+fn add_events(args: &CountdownArgs) -> Result<ActionTaken, String> {
+  Ok(ActionTaken::EventsAdded(ProcessedAdditionsState::Success(0)))
+}
+
+fn collect_args(clap_args: &clap::ArgMatches, now: SystemTime)
   -> Result<CountdownArgs, String> {
     // Largely unneeded because of Clap's validation, but
     // it's nice to have.
@@ -128,7 +180,60 @@ fn collect_args(clap_args: &clap::ArgMatches)
     None => Ok(None),
   }?;
 
-  Ok(CountdownArgs { order, n })
+  let additions = match clap_args.values_of(ARG_ADD_EVENT) {
+    Some(values) => collect_event_additions(&values, now),
+    None => Ok(Vec::with_capacity(0)),
+  }?;
+
+  Ok(CountdownArgs { additions, order, n })
+}
+
+fn collect_event_additions<'a>(
+  events: &impl Iterator<Item = &'a str>,
+  now: SystemTime,
+) -> Result<Vec<FutureEvent>, String> {
+  let max_args = MAX_ADDITIONS * 2; // event name & timestamp
+  let args = Vec::<&'a str>::with_capacity(max_args);
+  let peekable_iter = events.peekable();
+
+  while peekable_iter.peek().is_some() && args.len() < max_args {
+    match peekable_iter.next() {
+      Some(arg) => args.push(arg),
+      None => continue,
+    }
+  }
+
+  if peekable_iter.next().is_some() {
+    Err(format!(
+      "Cannot add more than {} events at a time. Aborting.",
+      MAX_ADDITIONS,
+    ))
+  } else {
+    let now_as_str = now.duration_since(UNIX_EPOCH)
+      .map(|dur| dur.as_secs().to_string())
+      .map_err(|e| format!(
+        "Could not convert current time {:?} to seconds.",
+      e))?;
+
+    args
+      .chunks(2)
+      .map(|[name, timestamp_str]| {
+        u32::from_str_radix(timestamp_str, 10)
+          .map_err(|_| format!("Could not parse time for event: {}. Aborting.", name))
+          .map(|time| Event { name: name.to_string(), time })
+          .and_then(|ev| ev.as_future_event(now)
+            .ok_or(format!("{} Aborting.", E_CANNOT_ADD_EXPIRED_EVENTS))
+          )
+      })
+      .fold(Ok(vec![]), |acc, event_res| {
+        acc.and_then(|events| {
+          event_res.map(|ev| {
+            events.push(ev);
+            events
+          })
+        })
+      })
+  }
 }
 
 fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<FutureEvent> {
@@ -179,10 +284,10 @@ fn limit_events(events: Vec<FutureEvent>, limit: Option<usize>) -> Vec<FutureEve
 
 fn applicable_events(
   now: SystemTime,
-  events: Vec<Event>,
+  events: &Vec<Event>,
   args: &CountdownArgs,
 ) -> Vec<FutureEvent> {
-  let current = filter_expired_events(now, &events);
+  let current = filter_expired_events(now, events);
   let sorted = sort_events(&current, &args.order);
   
   limit_events(sorted, args.n)

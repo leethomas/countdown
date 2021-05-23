@@ -16,3 +16,11 @@ args:
       takes_value: true
       multiple: false
       help: Max number of events to display.
+  - add:
+      short: a
+      long: add
+      takes_value: true
+      number_of_values: 2
+      multiple: true
+      conflicts_with: [order, n]
+      help: Add a new date to track.
