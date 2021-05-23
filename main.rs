@@ -3,9 +3,11 @@ extern crate rand;
 
 use std::convert::TryFrom;
 use std::path::Path;
+use std::io::Write;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+use itertools::Itertools;
 
 const SECONDS_IN_DAY: u64 = 86400;
 const MAX_ADDITIONS: usize = 100;
@@ -47,6 +49,10 @@ impl Event {
       })
   }
 
+  fn is_expired(&self, current_time: SystemTime) -> bool {
+    self.days_left(current_time).is_none()
+  }
+
   fn as_future_event(&self, current_time: SystemTime) -> Option<FutureEvent> {
     self.days_left(current_time).map(|days| FutureEvent {
       name: self.name.clone(),
@@ -86,7 +92,7 @@ impl std::str::FromStr for SortOrder {
 }
 
 struct CountdownArgs {
-  additions: Vec<FutureEvent>,
+  additions: Vec<Event>,
   order: Option<SortOrder>,
   n: Option<usize>,
 }
@@ -107,15 +113,8 @@ impl From<CountdownArgs> for Mode {
 }
 
 enum ActionTaken {
-  // lol unlikely that someone will add this many events at once
-  EventsAdded(ProcessedAdditionsState),
+  EventsAdded(usize),
   EventsDisplayed,
-}
-
-enum ProcessedAdditionsState {
-  // Contains number of events successfully processed
-  Success(u8),
-  Error(String),
 }
 
 fn main() {
@@ -159,8 +158,26 @@ fn display_events(
   Ok(ActionTaken::EventsDisplayed)
 }
 
-fn add_events(args: &CountdownArgs) -> Result<ActionTaken, String> {
-  Ok(ActionTaken::EventsAdded(ProcessedAdditionsState::Success(0)))
+fn add_events(additions: &Vec<Event>) -> Result<ActionTaken, String> {
+  let formatted_events = additions.iter()
+    .map(|event| {
+      format!(
+        "[[events]]\nname = \"{}\"\ntime = {}",
+        event.name,
+        event.time,
+      )
+    })
+    .intersperse("\n".to_string())
+    .collect::<String>();
+  let mut config_file = std::fs::OpenOptions::new()
+    .write(true)
+    .append(true)
+    .open(CONFIG_FILENAME)
+    .map_err(|e| format!("Could not open config file: {:?}", e))?;
+  writeln!(config_file, "\n{}\n", formatted_events)
+    .map_err(|e| format!("Could not write events to file: {:?}", e))?;
+
+  Ok(ActionTaken::EventsAdded(additions.len()))
 }
 
 fn collect_args(clap_args: &clap::ArgMatches, now: SystemTime)
@@ -191,7 +208,7 @@ fn collect_args(clap_args: &clap::ArgMatches, now: SystemTime)
 fn collect_event_additions<'a>(
   events: &impl Iterator<Item = &'a str>,
   now: SystemTime,
-) -> Result<Vec<FutureEvent>, String> {
+) -> Result<Vec<Event>, String> {
   let max_args = MAX_ADDITIONS * 2; // event name & timestamp
   let args = Vec::<&'a str>::with_capacity(max_args);
   let peekable_iter = events.peekable();
@@ -205,7 +222,7 @@ fn collect_event_additions<'a>(
 
   if peekable_iter.next().is_some() {
     Err(format!(
-      "Cannot add more than {} events at a time. Aborting.",
+      "Cannot add more than {} events at a time. No events were added.",
       MAX_ADDITIONS,
     ))
   } else {
@@ -219,11 +236,13 @@ fn collect_event_additions<'a>(
       .chunks(2)
       .map(|[name, timestamp_str]| {
         u32::from_str_radix(timestamp_str, 10)
-          .map_err(|_| format!("Could not parse time for event: {}. Aborting.", name))
+          .map_err(|_| format!("Could not parse time for event: {}. No events were added.", name))
           .map(|time| Event { name: name.to_string(), time })
-          .and_then(|ev| ev.as_future_event(now)
-            .ok_or(format!("{} Aborting.", E_CANNOT_ADD_EXPIRED_EVENTS))
-          )
+          .and_then(|ev| if ev.is_expired(now) {
+            Err(format!("{} No events were added.", E_CANNOT_ADD_EXPIRED_EVENTS))  
+          } else {
+            Ok(ev)
+          })
       })
       .fold(Ok(vec![]), |acc, event_res| {
         acc.and_then(|events| {
