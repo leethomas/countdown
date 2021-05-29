@@ -72,6 +72,7 @@ struct FutureEvent {
   days_left: u16,
 }
 
+#[derive(Clone)]
 enum SortOrder {
   Shuffle,
   TimeAsc,
@@ -91,6 +92,7 @@ impl std::str::FromStr for SortOrder {
   }
 }
 
+#[derive(Clone)]
 struct CountdownArgs {
   additions: Vec<Event>,
   order: Option<SortOrder>,
@@ -121,15 +123,15 @@ fn main() {
   let now = SystemTime::now();
   let cli_config = clap::load_yaml!("cli.yml");
   let cli_matches = clap::App::from_yaml(cli_config).get_matches();
-  let result: Result<ActionTaken, String> = dirs::home_dir()
+  let result = dirs::home_dir()
     .ok_or_else(|| "Failed to find home directory.".to_string())
     .map(|home| home.join(Path::new(CONFIG_FILENAME)))
     .and_then(|config_file| confy::load_path(config_file)
       .map_err(|e| format!("Couldn't load config: {:?}", e).to_string()))
     .and_then(|config: CountdownConfig|
-      collect_args(&cli_matches, now).map(|args| {
-        match Mode::from(&args) {
-          Mode::Add => add_events(&args),
+      collect_args(&cli_matches, now).and_then(|args| {
+        match Mode::from(args.clone()) {
+          Mode::Add => add_events(args.additions),
           Mode::Display => display_events(now, &config.events, &args),
         }
       })
@@ -158,7 +160,7 @@ fn display_events(
   Ok(ActionTaken::EventsDisplayed)
 }
 
-fn add_events(additions: &Vec<Event>) -> Result<ActionTaken, String> {
+fn add_events(additions: Vec<Event>) -> Result<ActionTaken, String> {
   let formatted_events = additions.iter()
     .map(|event| {
       format!(
@@ -198,7 +200,7 @@ fn collect_args(clap_args: &clap::ArgMatches, now: SystemTime)
   }?;
 
   let additions = match clap_args.values_of(ARG_ADD_EVENT) {
-    Some(values) => collect_event_additions(&values, now),
+    Some(values) => collect_event_additions(values, now),
     None => Ok(Vec::with_capacity(0)),
   }?;
 
@@ -206,12 +208,12 @@ fn collect_args(clap_args: &clap::ArgMatches, now: SystemTime)
 }
 
 fn collect_event_additions<'a>(
-  events: &impl Iterator<Item = &'a str>,
+  events: impl Iterator<Item = &'a str>,
   now: SystemTime,
 ) -> Result<Vec<Event>, String> {
   let max_args = MAX_ADDITIONS * 2; // event name & timestamp
-  let args = Vec::<&'a str>::with_capacity(max_args);
-  let peekable_iter = events.peekable();
+  let mut args = Vec::<&'a str>::with_capacity(max_args);
+  let mut peekable_iter = events.peekable();
 
   while peekable_iter.peek().is_some() && args.len() < max_args {
     match peekable_iter.next() {
@@ -226,29 +228,27 @@ fn collect_event_additions<'a>(
       MAX_ADDITIONS,
     ))
   } else {
-    let now_as_str = now.duration_since(UNIX_EPOCH)
-      .map(|dur| dur.as_secs().to_string())
-      .map_err(|e| format!(
-        "Could not convert current time {:?} to seconds.",
-      e))?;
-
     args
       .chunks(2)
-      .map(|[name, timestamp_str]| {
-        u32::from_str_radix(timestamp_str, 10)
+      .map(|parts| match parts {
+        [name, timestamp_str] => u32::from_str_radix(timestamp_str, 10)
           .map_err(|_| format!("Could not parse time for event: {}. No events were added.", name))
           .map(|time| Event { name: name.to_string(), time })
           .and_then(|ev| if ev.is_expired(now) {
             Err(format!("{} No events were added.", E_CANNOT_ADD_EXPIRED_EVENTS))  
           } else {
             Ok(ev)
-          })
+          }),
+        _ => Err(
+          "Too many or insufficient amount of arguments for add command."
+            .to_string()
+          ),
       })
       .fold(Ok(vec![]), |acc, event_res| {
-        acc.and_then(|events| {
+        acc.and_then(|mut collected_events| {
           event_res.map(|ev| {
-            events.push(ev);
-            events
+            collected_events.push(ev);
+            collected_events
           })
         })
       })
