@@ -1,13 +1,11 @@
 extern crate clap;
 extern crate rand;
+extern crate chrono;
 
-use std::convert::TryFrom;
 use std::path::Path;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 
-const SECONDS_IN_DAY: u64 = 86400;
 const CONFIG_FILENAME: &str = ".countdown.toml";
 const ARG_LIST_N: &str = "n";
 const ARG_ORDER: &str = "order";
@@ -29,29 +27,28 @@ impl Default for CountdownConfig {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 struct Event {
   name: String,
-  // Unix timestamp (seconds)
-  time: u32,
+  date: chrono::NaiveDate,
 }
 
 impl Event {
-  fn days_left(&self, current_time: SystemTime) -> Option<u16> {
-    self.system_time()
-      .duration_since(current_time)
-      .ok()
-      .and_then(|dur| {
-        u16::try_from(dur.as_secs() / SECONDS_IN_DAY).ok()
-      })
+  /// Returns the number of days until the event if the event is either today or in the future, otherwise returns None.
+  fn days_left(&self, current_time: chrono::DateTime<chrono::Local>) -> Option<u16> {
+    let days = self.date
+      .signed_duration_since(current_time.date_naive())
+      .num_days();
+
+    if days >= 0 && days <= u16::MAX as i64 {
+      Some(days as u16)
+    } else {
+      None
+    }
   }
 
-  fn as_future_event(&self, current_time: SystemTime) -> Option<FutureEvent> {
+  fn as_future_event(&self, current_time: chrono::DateTime<chrono::Local>) -> Option<FutureEvent> {
     self.days_left(current_time).map(|days| FutureEvent {
       name: self.name.clone(),
       days_left: days,
     })
-  }
-
-  fn system_time(&self) -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(self.time.into())
   }
 }
 
@@ -87,7 +84,7 @@ struct CountdownArgs {
 }
 
 fn main() {
-  let now = SystemTime::now();
+  let now = chrono::Local::now();
   let cli_config = clap::load_yaml!("cli.yml");
   let cli_matches = clap::App::from_yaml(cli_config).get_matches();
   let result: Result<Vec<FutureEvent>, String> = dirs::home_dir()
@@ -105,7 +102,7 @@ fn main() {
       Ok(events) => events
         .iter()
         .for_each(|ev| {
-          println!("{} days until {}", ev.days_left, ev.name)
+          println!("{}d until {}", ev.days_left, ev.name)
         }),
       Err(e) => eprintln!("{:?}", e),
     }
@@ -115,7 +112,7 @@ fn collect_args(clap_args: &clap::ArgMatches)
   -> Result<CountdownArgs, String> {
     // Largely unneeded because of Clap's validation, but
     // it's nice to have.
-  let order = match clap_args.value_of(ARG_ORDER) {
+  let order: Option<SortOrder> = match clap_args.value_of(ARG_ORDER) {
     Some(o) => o.parse::<SortOrder>().map(Some),
     None => Ok(None),
   }?;
@@ -131,7 +128,7 @@ fn collect_args(clap_args: &clap::ArgMatches)
   Ok(CountdownArgs { order, n })
 }
 
-fn filter_expired_events(now: SystemTime, events: &Vec<Event>) -> Vec<FutureEvent> {
+fn filter_expired_events(now: chrono::DateTime<chrono::Local>, events: &Vec<Event>) -> Vec<FutureEvent> {
   events
     .iter()
     .filter_map(|ev| ev.as_future_event(now))
@@ -178,7 +175,7 @@ fn limit_events(events: Vec<FutureEvent>, limit: Option<usize>) -> Vec<FutureEve
 }
 
 fn applicable_events(
-  now: SystemTime,
+  now: chrono::DateTime<chrono::Local>,
   events: Vec<Event>,
   args: &CountdownArgs,
 ) -> Vec<FutureEvent> {
@@ -195,24 +192,24 @@ mod tests {
   // Event
   #[test]
   fn event_days_left_calculates_remaining_days_correctly() {
-    let event = Event { name: "test".to_string(), time: 172800 };
-    let result = event.days_left(UNIX_EPOCH);
+    let event = Event { name: "test".to_string(), date: chrono::NaiveDate::from_ymd_opt(1970, 1, 2).unwrap()};
+    let result = event.days_left(chrono::DateTime::UNIX_EPOCH);
 
     assert_eq!(result, Some(2));
   }
 
   #[test]
   fn event_days_left_returns_none_if_expired() {
-    let event = Event { name: "test".to_string(), time: 5000 };
-    let result = event.days_left(UNIX_EPOCH + Duration::from_secs(10000));
+    let event = Event { name: "test".to_string(), date: 5000 };
+    let result = event.days_left(chrono::DateTime::UNIX_EPOCH + chrono::Duration::from_secs(10000));
 
     assert_eq!(result, None);
   }
 
   #[test]
   fn event_as_future_event_returns_future_event_if_not_expired() {
-    let event = Event { name: "test".to_string(), time: 172800 };
-    let result = event.as_future_event(UNIX_EPOCH);
+    let event = Event { name: "test".to_string(), date: 172800 };
+    let result = event.as_future_event(chrono::DateTime::UNIX_EPOCH);
 
     assert_eq!(result, Some(FutureEvent {
       name: "test".to_string(),
@@ -222,9 +219,9 @@ mod tests {
 
   #[test]
   fn event_as_future_event_returns_none_if_expired() {
-    let event = Event { name: "test".to_string(), time: 172800 };
+    let event = Event { name: "test".to_string(), date: 172800 };
     let result = event.as_future_event(
-      UNIX_EPOCH + Duration::from_secs(172801)
+      chrono::DateTime::UNIX_EPOCH + Duration::from_secs(172801)
     );
 
     assert_eq!(result, None);
@@ -234,12 +231,12 @@ mod tests {
   #[test]
   fn filter_expired_events_removes_expired_events() {
     let events = vec![
-      Event { name: "expired 1".to_string(), time: 900 },
-      Event { name: "not expired 1".to_string(), time: 1020 },
-      Event { name: "expired 3".to_string(), time: 543 },
+      Event { name: "expired 1".to_string(), date: 900 },
+      Event { name: "not expired 1".to_string(), date: 1020 },
+      Event { name: "expired 3".to_string(), date: 543 },
     ];
     let result = filter_expired_events(
-      UNIX_EPOCH + Duration::from_secs(1000),
+      chrono::DateTime::UNIX_EPOCH + Duration::from_secs(1000),
       &events,
     );
 
