@@ -34,15 +34,15 @@ OPTIONS:
   ```toml
   [[events]]
   name = "summer break"
-  time = 1892160000 # these are unix timestamps in seconds
+  date = "2025-07-12"
 
   [[events]]
   name = "wwdc"
-  time = 1892250000
+  time = "2025-06-30"
 
   [[events]]
-  name = "memorial day weekend"
-  time = 1892170000
+  name = "the future"
+  time = 2050-02-04
   ```
 
 3. Now run `countdown` in your shell and you're all set 🎉
