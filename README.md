@@ -38,11 +38,11 @@ OPTIONS:
 
   [[events]]
   name = "wwdc"
-  time = "2025-06-30"
+  date = "2025-06-30"
 
   [[events]]
   name = "the future"
-  time = 2050-02-04
+  date = "2050-02-04"
   ```
 
 3. Now run `countdown` in your shell and you're all set 🎉
